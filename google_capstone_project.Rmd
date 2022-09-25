@@ -1,0 +1,478 @@
+---
+title: "Google Data Analytics Certificate - Capstone Project"
+author: "Juliano Orlandi"
+date: "2022-09-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This document is a report for the final project of the Google Data Analytics Certificate. More information about the course can be founded [here](https://www.coursera.org/professional-certificates/google-data-analytics) and about the project [here](https://d3c33hcgiwev3.cloudfront.net/aacF81H_TsWnBfNR_x7FIg_36299b28fa0c4a5aba836111daad12f1_DAC8-Case-Study-1.pdf?Expires=1664150400&Signature=NMAQWQL1ksfkmxwXD30NGUI21ixUzcZvapmViLaV4x-ntit76y-X2yNbXGeDghulOfmTqcKohgZ7os9ws5tdxiOTp9ifi~lFSLZL9Y1e~p2DF2ZXkVasUdG7BDUqRP40EEeLbz9yjRLd04HzW2Hp4h6c1mpPVSEDsPMNzJXf89Y_&Key-Pair-Id=APKAJLTNE6QMUY6HBC5A).
+The goals with this part of the course were to put in practice, to develop and to show the skills taught during the previous seven courses of the certificate. These included besides other skills **data cleaning**, **data processing**, **data analysis** and **data visualizations**.
+
+## Ask
+
+In this case study, the task was to help the marketing team of a fictional company of bike sharing called **Cyclistic**. More specifically, the company was interested in converting casual customers of the service into annual members. To achieve this purpose, a new marketing strategy would be designed based on the data collected in the last 12 months. My job was:
+
+* **to analyze this data to discover how casual riders and annual members use *Cyclistic* bikes differently.**
+
+The data used was from August 2021 to July 2022 and it is available [here](https://divvy-tripdata.s3.amazonaws.com/index.html).
+
+## Preparation
+
+The packages and libraries used were the following:
+
+```{r eval=FALSE, class.source = 'fold-hide'}
+install.packages("tidyverse")
+library(tidyverse)
+install.packages("lubridate")
+library(lubridate)
+install.packages("ggplot2")
+library(ggplot2)
+install.packages("showtext")
+library(showtext)
+library(scales)
+```
+
+The data was in 12 .csv files. I gathered all of them in one data frame. Here is the code:
+
+```{r eval=FALSE}
+df2108 <- read.csv("Case Study 1/202108-divvy-tripdata.csv")
+df2109 <- read.csv("Case Study 1/202109-divvy-tripdata.csv")
+df2110 <- read.csv("Case Study 1/202110-divvy-tripdata.csv")
+df2111 <- read.csv("Case Study 1/202111-divvy-tripdata.csv")
+df2112 <- read.csv("Case Study 1/202112-divvy-tripdata.csv")
+df2201 <- read.csv("Case Study 1/202201-divvy-tripdata.csv")
+df2202 <- read.csv("Case Study 1/202202-divvy-tripdata.csv")
+df2203 <- read.csv("Case Study 1/202203-divvy-tripdata.csv")
+df2204 <- read.csv("Case Study 1/202204-divvy-tripdata.csv")
+df2205 <- read.csv("Case Study 1/202205-divvy-tripdata.csv")
+df2206 <- read.csv("Case Study 1/202206-divvy-tripdata.csv")
+df2207 <- read.csv("Case Study 1/202207-divvy-tripdata.csv")
+
+df <- rbind(df2108, df2109, df2110, df2111, df2112, df2201, df2202, df2203,
+            df2204, df2205, df2206, df2207)
+```
+
+I changed all the blank values to missing values (NA). After that, I looped through the columns searching for missing values (is.na). I discovered some of them in the following columns: **start_station_name**, **start_station_id**, **end_station_name**, **end_station_id**, **end_lat and end_lng**. Here is the code:
+
+```{r eval=FALSE}
+df[df == ""] <- NA
+```
+
+```{r eval=FALSE}
+for (i in 1:13){
+  n_row <- nrow(filter(df, is.na(df[i])))
+  if (n_row != 0){
+    message(colnames(df[i]), " ", n_row)
+  }
+}
+```
+
+I checked for duplicated rows by comparing the number of unique values in the first column, ride_id, with the total number of rows. As they were the same, I concluded that there were not duplicated rows. Here is the code:
+
+```{r eval=FALSE}
+if (length(unique(df$ride_id)) == nrow(df)){
+    message("No duplicated rows.")
+}
+```
+
+I used the function *unique* to check if there were misspellings in columns **rideable_type** and **member_casual**. No mistakes were found. Here is the code:
+
+```{r eval=FALSE}
+unique(df$rideable_type)
+unique(df$member_casual)
+```
+
+## Process
+
+In regards to missing values in the two last columns (**end_lat**, **end_lng**),
+I supposed that something went wrong with the GPS system of the bike.
+These cases represented 0.09 % of total rides. I believe this information was 
+negligible and I removed these rows. Here is the code:
+
+```{r eval=FALSE}
+df <- filter(df, !is.na(df$end_lat) | !is.na(df$end_lng))
+```
+
+
+In regards to missing values in the other columns, things were a little more complicated. Firstly, because electric_bikes can be parked in public bike racks, which means that the data may not have a start or end station. Classic_bikes and docked_bikes, though, must be taken and left at a station. The number of docked_bike with missing values in one of the four station columns was 0 but the number of classic_bikes with this condition was 2815, which represents 0.05% of total rides. I removed these rows too. Here is the code:
+
+```{r eval=FALSE}
+df_class_mis_st <- filter(df, is.na(df$start_station_name) & df$rideable_type == "classic_bike"
+                          | is.na(df$start_station_id) & df$rideable_type == "classic_bike"
+                          | is.na(df$end_station_name) & df$rideable_type == "classic_bike"
+                          | is.na(df$end_station_id) & df$rideable_type == "classic_bike")
+
+df <- anti_join(df, df_class_mis_st, by="ride_id")
+```
+
+Because of the size of the data, it was taking too long to process the information. I decided to create specific data frames to each criteria (rideable_type, time, station) that would be used in the analysis. The goal was to make the work easier and faster. Here is the code:
+
+```{r eval=FALSE}
+df_customer_type <- data.frame(customer_type = df$member_casual)
+df_rideable_type <- data.frame(rideable_type = df$rideable_type)
+df_station <- data.frame(start_station_name = df$start_station_name, start_station_id
+                         = df$start_station_id, end_station_name =df$end_station_name,
+                         end_station_id = df$end_station_id)
+```
+
+In regards to time information, the process was a little more complicated. Firstly, I separated each part of the datetime data (year, month, day, time_started and time_ended). Secondly, I created another data frame with weekdays. Thirdly, I performed calculation to get the duration of the rides. And, finally, I created a data frame with all this information.
+
+```{r eval=FALSE}
+df_temp <- data.frame(started_at = df$started_at, ended_at = df$ended_at)
+df_temp$year <- as.numeric(format(as.Date(df_temp$started_at), format = "%Y"))
+df_temp$month <- as.numeric(format(as.Date(df_temp$started_at), format = "%m"))
+df_temp$day <- as.numeric(format(as.Date(df_temp$started_at), format = "%d"))
+df_temp$time_started <- format(as.POSIXct(df_temp$started_at), format = "%H:%M:%S")
+df_temp$time_ended <- format(as.POSIXct(df_temp$ended_at), format = "%H:%M:%S")
+```
+
+```{r eval=FALSE}
+df_temp$weekday <- wday(df_temp$started_at, label=TRUE, abbr=FALSE, locale = "en")
+df_temp$duration <- as.numeric(difftime(as.POSIXct(df_temp$ended_at), 
+                                        as.POSIXct(df_temp$started_at), units="mins"))
+
+df_time <- data.frame(year = df_temp$year, month = df_temp$month, day = df_temp$day, 
+                      weekday = df_temp$weekday, time_started = df_temp$time_started,
+                      time_ended = df_temp$time_ended, duration_mins =
+                      round(df_temp$duration))
+```
+
+## Analysis
+
+The first step of the analysis was to compare the number of rides with the customer types (casual or member) in percentages. Here is the code:
+
+```{r eval=FALSE}
+customer_vs_no_rides <- data.frame(matrix(ncol = 2, nrow = 2))
+col_names <- c("customer_type", "percentage_of_rides")
+colnames(customer_vs_no_rides) <- col_names
+customer_types <- unique(df_customer_type)
+
+for(i in 1:2){
+  customer_vs_no_rides[i, 1] <- customer_types[i, 1]
+  customer_vs_no_rides[i, 2] <- round(nrow(filter(df_customer_type,df_customer_type[1]
+                                            == customer_types[i, 1])) /
+                                      nrow(df_customer_type) * 100, digits = 2)
+}
+```
+
+The second step was to compare the customer types with number of rides by month. Here is the code:
+
+```{r eval=FALSE}
+df_customer_month <- data.frame(customer_type = df_customer_type$customer_type, month = df_time$month)
+
+month_vs_customer <- data.frame(matrix(ncol = 4, nrow = 12))
+col_names <- c("months", "casual", "member", "total_rides")
+colnames(month_vs_customer) <- col_names
+months <- month.name[unique(df_time$month)]
+
+for (i in 1:5) {
+  temp <- nrow(filter(df_customer_month, df_customer_month$month == i + 7))
+  month_vs_customer[i, 1] <- months[i]
+  month_vs_customer[i, 2] <- nrow(filter(df_customer_month, df_customer_month$customer_type == "casual",
+                                         df_customer_month$month == i + 7))
+  month_vs_customer[i, 3] <- nrow(filter(df_customer_month, df_customer_month$customer_type == "member",
+                                         df_customer_month$month == i + 7))
+  month_vs_customer[i, 4] <- temp
+}
+
+for (i in 6:12) {
+  temp <- nrow(filter(df_customer_month, df_customer_month$month == i - 5))
+  month_vs_customer[i, 1] <- months[i]
+  month_vs_customer[i, 2] <- nrow(filter(df_customer_month, df_customer_month$customer_type == "casual",
+                                         df_customer_month$month == i - 5))
+  month_vs_customer[i, 3] <- nrow(filter(df_customer_month, df_customer_month$customer_type == "member",
+                                         df_customer_month$month == i - 5))
+  month_vs_customer[i, 4] <- temp
+}
+```
+
+The third step was to compare the customer types with number of rides by weekday. Here is the code:
+
+```{r eval=FALSE}
+df_customer_weekday <- data.frame(customer_type = df_customer_type$customer_type, weekday = as.numeric(df_time$weekday))
+
+weekday_vs_customer <- data.frame(matrix(ncol = 4, nrow = 7))
+col_names <- c("weekday", "casual", "member", "total_rides")
+row_names <- c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+colnames(weekday_vs_customer) <- col_names
+weekdays <- as.numeric(unique(df_time$weekday))
+
+for (i in 1:7){
+  temp <- nrow(filter(df_customer_weekday, df_customer_weekday$weekday == i))
+  weekday_vs_customer[i, 1] <- row_names[i]
+  weekday_vs_customer[i, 2] <- nrow(filter(df_customer_weekday, df_customer_weekday$customer_type == "casual",
+                                           df_customer_weekday$weekday == i))
+  weekday_vs_customer[i, 3] <- nrow(filter(df_customer_weekday, df_customer_weekday$customer_type == "member",
+                                           df_customer_weekday$weekday == i))
+  weekday_vs_customer[i, 4] <- temp
+}
+```
+
+The fourth step was to compare the customer types with the average duration of the rides. I added two more columns with the same analysis but with the condition of being a ride below 30 min and a ride above 30 min. The goal was to differentiate the use of bikes for everyday tasks like going to work from rides with leisure or physical activity purposes. Here is the code:
+
+```{r eval=FALSE}
+df_customer_duration <- data.frame(customer_type = df_customer_type$customer_type, duration = df_time$duration)
+
+customer_vs_duration <- data.frame(matrix(ncol = 4, nrow = 2))
+col_names <- c("customer_type", "all_rides", "below_30_min", "above_30_min")
+colnames(customer_vs_duration) <- col_names
+customers <- unique(df_customer_duration$customer_type)
+
+for (i in 1:2){
+  customer_vs_duration[i, 1] <- customers[i]
+  customer_vs_duration[i, 2] <- round(mean(subset(df_customer_duration$duration,
+                                                  df_customer_duration$customer_type
+                                                  == customers[i])))
+  customer_vs_duration[i, 3] <- round(mean(subset(df_customer_duration$duration,
+                                                  df_customer_duration$customer_type
+                                                  == customers[i] & df_customer_duration$duration <= 30)))
+  customer_vs_duration[i, 4] <- round(mean(subset(df_customer_duration$duration,
+                                                  df_customer_duration$customer_type
+                                                  == customers[i] & df_customer_duration$duration > 30)))
+}
+```
+
+The fifth step was to discover for each type of customer the percentage of rides below 30 minutes and above 30 minutes. Here is the code:
+
+```{r eval=FALSE}
+customer_vs_percentage_duration <- data.frame(matrix(ncol = 3, nrow = 2))
+col_names <- c("customer_type", "below_30_min", "above_30_min")
+colnames(customer_vs_percentage_duration) <- col_names
+
+for (i in 1:2){
+  customer_vs_percentage_duration[i, 1] <- customers[i]
+  customer_vs_percentage_duration[i, 2] <- round( nrow(subset(df_customer_duration, 
+                                                              df_customer_duration$customer_type == customers[i]
+                                                              & df_customer_duration$duration <= 30))
+                                                  / nrow(subset(df_customer_duration,
+                                                                df_customer_duration$customer_type == customers[i]))
+                                                  * 100, digits=2)
+  
+  customer_vs_percentage_duration[i, 3] <- round(nrow(subset(df_customer_duration,
+                                                             df_customer_duration$customer_type == customers[i]
+                                                             & df_customer_duration$duration > 30))
+                                                 / nrow(subset(df_customer_duration,
+                                                               df_customer_duration$customer_type == customers[i]))
+                                                 * 100, digits = 2)
+}
+```
+
+The sixth step was to compare the customer types with number of the rides by rideable type. Here is the code:
+
+```{r eval=FALSE}
+df_customer_rideable <- data.frame(customer_type = df_customer_type$customer_type,
+                                   rideable_type = df_rideable_type$rideable_type)
+
+customer_vs_rideable <- data.frame(matrix(ncol = 4, nrow = 2))
+col_names <- c("customer_type", "electric_bike", "classic_bike", "docked_bike")
+colnames(customer_vs_rideable) <- col_names
+customers <- unique(df_customer_rideable$customer_type)
+bikes <- unique(df_customer_rideable$rideable_type)
+
+for (i in 1:2){
+  temp <- nrow(filter(df_customer_rideable, df_customer_rideable$customer_type == customers[i]))
+  customer_vs_rideable[i, 1] <- customers[i]
+  for (j in 2:4){
+    customer_vs_rideable[i, j] <- round(nrow(filter(df_customer_rideable, 
+                                              df_customer_rideable$customer_type
+                                              == customers[i] & df_customer_rideable$rideable_type
+                                              == bikes[j-1])) / temp * 100, digits = 2)
+  }
+}
+```
+
+The seventh step was to discover which stations were most used by each type of customers. Firstly, I created a data frame with the stations and the number of rides of each type of customer, including missing values (NA). Secondly, I separated this data frame into two, one with the twenty most used stations by casual customers and another with the twenty most used stations by annual members. Here is the code:
+
+```{r eval=FALSE}
+df_customer_station <- data.frame(customer_type = df_customer_type$customer_type,
+                                   start_station_name = df_station$start_station_name,
+                                  end_station_name = df_station$end_station_name)
+
+start_stations <- unique(df_customer_station$start_station_name)
+end_stations <- unique(df_customer_station$end_station_name)
+stations <- unique(c(start_stations, end_stations))
+customers <- unique(df_customer_station$customer_type)
+
+customer_vs_station <- data.frame(matrix(ncol = 3, nrow = length(stations)))
+col_names <- c("stations", "member", "casual")
+colnames(customer_vs_station) <- col_names
+}
+
+for (i in 1:length(stations)) {
+  if (is.na(stations[i])) {
+    customer_vs_station[i, 1] <- NA
+    for (j in 1:2){
+      customer_vs_station[i, j + 1] <- nrow(subset(df_customer_station, df_customer_station$customer_type ==
+                                                  customers[j] & is.na(df_customer_station$start_station_name)))
+                                       + nrow(subset(df_customer_station, df_customer_station$customer_type ==
+                                                    customers[j] & is.na(df_customer_station$end_station_name)))
+    }
+  }
+  else {
+    customer_vs_station[i, 1] <- stations[i]
+    for (k in 1:2){
+      customer_vs_station[i, k + 1] <- nrow(subset(df_customer_station, df_customer_station$customer_type ==
+                                                  customers[k] & df_customer_station$start_station_name ==
+                                                  stations[i]))
+                                       + nrow(subset(df_customer_station, df_customer_station$customer_type ==
+                                                  customers[k] & df_customer_station$end_station_name ==
+                                                  stations[i]))
+    }
+  }
+}
+
+casual_vs_top_station <- data.frame(stations = customer_vs_station$stations, visits = customer_vs_station$casual)
+casual_vs_top_station <- casual_vs_top_station[order(casual_vs_top_station$visits, decreasing = TRUE), ]
+casual_vs_top_station <- casual_vs_top_station[c(2:21), ]
+
+member_vs_top_station <- data.frame(stations = customer_vs_station$stations, visits = customer_vs_station$member)
+member_vs_top_station <- member_vs_top_station[order(member_vs_top_station$visits, decreasing = TRUE), ]
+member_vs_top_station <- member_vs_top_station[c(2:21), ]
+```
+The eighth step was to discover which stations were most visited by casual customers when their rides were below 30 minutes and when their rides were above 30 minutes. Here is the code:
+
+```{r eval=FALSE}
+df_customer_station_duration <- data.frame(customer_type = df_customer_type$customer_type,
+                                  start_station_name = df_station$start_station_name,
+                                  end_station_name = df_station$end_station_name, duration =
+                                    df_time$duration_mins)
+
+casual_station_vs_duration <- data.frame(matrix(ncol = 3, nrow = length(stations)))
+col_names <- c("stations", "below_30_min", "above_30_min")
+colnames(casual_station_vs_duration) <- col_names
+
+for (i in 1:length(stations)) {
+  if (is.na(stations[i])) {
+    casual_station_vs_duration[i, 1] <- NA
+    casual_station_vs_duration[i, 2] <- nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "casual" & is.na(df_customer_station_duration$start_station_name) & df_customer_station_duration$duration <= 30)) + nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "casual" & is.na(df_customer_station_duration$end_station_name) & df_customer_station_duration$duration <= 30))
+    casual_station_vs_duration[i, 3] <- nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "casual" & is.na(df_customer_station_duration$start_station_name) & df_customer_station_duration$duration > 30)) + nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "casual" & is.na(df_customer_station_duration$end_station_name) & df_customer_station_duration$duration > 30))
+  }
+  else {
+    casual_station_vs_duration[i, 1] <- stations[i]
+    casual_station_vs_duration[i, 2] <- nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "casual" & df_customer_station_duration$start_station_name == stations[i] & df_customer_station_duration$duration <= 30)) + nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "casual" & df_customer_station_duration$end_station_name == stations[i] & df_customer_station_duration$duration <= 30))
+    casual_station_vs_duration[i, 3] <- nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "casual" & df_customer_station_duration$start_station_name == stations[i] & df_customer_station_duration$duration > 30)) + nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "casual" & df_customer_station_duration$end_station_name == stations[i] & df_customer_station_duration$duration > 30))
+  }
+}
+
+casual_vs_top_station_below <- data.frame(stations = casual_station_vs_duration$stations, below_30_min = casual_station_vs_duration$below_30_min)
+casual_vs_top_station_below <- casual_vs_top_station_below[order(casual_vs_top_station_below$below_30_min, decreasing = TRUE), ]
+casual_vs_top_station_below <- casual_vs_top_station_below[c(2:21), ]
+
+casual_vs_top_station_above <- data.frame(stations = casual_station_vs_duration$stations, above_30_min = casual_station_vs_duration$above_30_min)
+casual_vs_top_station_above <- casual_vs_top_station_above[order(casual_vs_top_station_above$above_30_min, decreasing = TRUE), ]
+casual_vs_top_station_above <- casual_vs_top_station_above[c(2:21), ]
+```
+
+The ninth step was to discover which stations were most visited by annual members when their rides were below 30 minutes and when their rides were above 30 minutes. Here is the code:
+
+```{r eval=FALSE}
+member_station_vs_duration <- data.frame(matrix(ncol = 3, nrow = length(stations)))
+col_names <- c("stations", "below_30_min", "above_30_min")
+colnames(member_station_vs_duration) <- col_names
+
+for (i in 1:length(stations)) {
+  if (is.na(stations[i])) {
+    member_station_vs_duration[i, 1] <- NA
+    member_station_vs_duration[i, 2] <- nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "member" & is.na(df_customer_station_duration$start_station_name) & df_customer_station_duration$duration <= 30)) + nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "member" & is.na(df_customer_station_duration$end_station_name) & df_customer_station_duration$duration <= 30))
+    member_station_vs_duration[i, 3] <- nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "member" & is.na(df_customer_station_duration$start_station_name) & df_customer_station_duration$duration > 30)) + nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "member" & is.na(df_customer_station_duration$end_station_name) & df_customer_station_duration$duration > 30))
+  }
+  else {
+    member_station_vs_duration[i, 1] <- stations[i]
+    member_station_vs_duration[i, 2] <- nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "member" & df_customer_station_duration$start_station_name == stations[i] & df_customer_station_duration$duration <= 30)) + nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "member" & df_customer_station_duration$end_station_name == stations[i] & df_customer_station_duration$duration <= 30))
+    member_station_vs_duration[i, 3] <- nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "member" & df_customer_station_duration$start_station_name == stations[i] & df_customer_station_duration$duration > 30)) + nrow(subset(df_customer_station_duration, df_customer_station_duration$customer_type == "member" & df_customer_station_duration$end_station_name == stations[i] & df_customer_station_duration$duration > 30))
+  }
+}
+
+member_vs_top_station_below <- data.frame(stations = member_station_vs_duration$stations, below_30_min = member_station_vs_duration$below_30_min)
+member_vs_top_station_below <- member_vs_top_station_below[order(member_vs_top_station_below$below_30_min, decreasing = TRUE), ]
+member_vs_top_station_below <- member_vs_top_station_below[c(2:21), ]
+
+member_vs_top_station_above <- data.frame(stations = member_station_vs_duration$stations, above_30_min = member_station_vs_duration$above_30_min)
+member_vs_top_station_above <- member_vs_top_station_above[order(member_vs_top_station_above$above_30_min, decreasing = TRUE), ]
+member_vs_top_station_above <- member_vs_top_station_above[c(2:21), ]
+```
+## Sharing
+
+I used the following font on the plots:
+
+```{r eval=FALSE}
+font_add_google("Montserrat")
+showtext_auto()
+```
+
+The first plot shows the percentage of rides for each type of customers. Here is the plot:
+<div align="center">![](images/plot1.png)</div>
+
+The second plot shows the number of rides by month during the analyzed period. The lines represent the number of rides by type of customer.It is interesting to notice that August is the only month in which casual customers' rides are greater than members' rides. It is summer and school break.
+
+<div align="center">![](images/plot2.png)</div>
+
+The third plot shows the number of rides by weekdays. The lines represent the number of rides by type of customer.It is interesting to notice that casual customers' rides are greater than members' rides during the weekend. It is an indication of the use of bikes for leisure or for physical activity.
+
+<div align="center">![](images/plot3.png)</div>
+
+The fourth plot shows the average ride duration by customer types. It is interesting to compare the average duration of all rides with the average duration of rides below 30 minutes. In the case of annual members, the difference is just 3 minutes. In the case of casual customers, the difference is 12 minutes. I think this information shows the casual customers use the service for leisure or physical activities while annual members use mostly for everyday rides.
+
+<div align="center">![](images/plot4.png)</div>
+
+The fifth plot shows the percentages of rides below and above 30 minutes for each type of customer. It is interesting to see that, although an expressive amount of casual customers' rides are above 30 minutes (~20%), the majority of them (~80%) last less than 30 minutes.
+
+<div align="center">![](images/plot5.png)</div>
+
+The sixth plot shows the choice of different rideable types by customer types. There is a third type of bike called docked_bike in the data. I decided to omit this information because there was no members' rides with it. This kind of ride couldn't be used as a criteria to compare customers' types. One important thing to notice is that casual customers don't seen to have any preferences in regards the rideable types while annual members choose more oftenly classic_bikes.
+
+<div align="center">![](images/plot6.png)</div>
+
+The seventh plot shows the twenty stations most often used by casual customers. The first one, **Streeter Dr & Grand Ave**, is located near some parks of Chicago, which seems to indicate that casual customers use the bikes mostly for leisure or physical activities.
+
+<div align="center">![](images/plot7.png)</div>
+
+The eighth plot shows the most used stations by casual customers with rides that last below 30 minutes. The results are not very different from the results on the seventh plot.
+
+<div align="center">![](images/plot8.png)</div>
+
+The ninth plot shows the most used stations by casual customers with rides that last above 30 minutes. As well as on the eighth plot, the results are not very different from the results on the seventh plot.
+
+<div align="center">![](images/plot9.png)</div>
+
+The tenth plot shows the twenty stations most often used by annual members. It is possible to see that they are very different from the stations used more often by the casual customers and the number of rides is better distributed by each station.
+
+<div align="center">![](images/plot10.png)</div>
+
+The eleventh plot shows the most used stations by annual members with rides that last below 30 minutes. As well as on the plots about casual customers most often used stations, the results are not very different from the results on the tenth plot.
+
+<div align="center">![](images/plot11.png)</div>
+
+The twelfth plot shows the most used stations by annual members with rides that last above 30 minutes. It is interesting to notice that there are a lot of stations in this plot in common with the stations most often used by casual customers. Considering that this long duration rides seems to have a leisure or a physical activity purpose, this plot suggests that casual customers use the service mostly for this kind of goal.
+
+<div align="center">![](images/plot12.png)</div>
+
+## Act
+
+### Final conclusion
+
+My final conclusion is the following. There are two main differences between casual customers and annual members in regards to the use of the bike-sharing service. The first one is the stations they most often visit (see the **Most used stations by casual customers** and **Most used stations by annual members**) The second difference is related to time and it is divided in three aspects. Firstly, casual customers’ rides are longer than annual members’ (see **Customer’s types vs. Average ride duration**). Secondly, the difference between the use of bikes by casual customers during the months are more intense than the same difference in the case of annual members (see **Customer’s types vs. Months rides**). Finally, casual customers and annual members use the service very differently during the week (see **Customer’s types vs. Weekdays rides**). The former use more in weekends and the latter during week days.
+
+### My recommendations to the marketing team
+
+I have three recommendations to the marketing team.  The first one is related to rides’ duration. Casual customers usually take longer rides. With current prices (September 2022), a single ride of 45 minutes, for example, will cost $8,20 ($1 to unlock the bike and $0.16 for minute). The annual membership gives unlimited 45 minutes rides and costs $10 a month. Perhaps the marketing team can find ways to show to casual customers that the annual membership is worthwhile financially for those who often take long-term rides.
+
+The second recommendation is related to the months when the casual customers use the service more. I recommend that the marketing team focus their efforts from May to October, because this is the time when the number of casual customers’ rides increases significantly. They are probably more inclined to become members at this moment.
+
+The third recommendation is related to the areas where to advertise the marketing campaign. I recommend to choose the areas near to the most visited stations by casual customers in accordance with the plot **Most used stations by casual customers**.
+
+### Analysis Expansion
+
+I would recommend also to continue the data analysis. There are three more steps that could be very useful to develop and deepen the analysis. The first is to include data about the customers. As the dataset used was public, the company omitted this kind of information. But in a real life situation, this data would be available. This opens up lots of possibilities. For example, by knowing the town where the customer is from, I could filter out tourist that may have used the bike-sharing service during the period analyzed. I could also identify trends in age, gender and occupation of the clients. All this information could give more efficient insights to the marketing campaign.
+
+The second step would be to redo the analysis of the time information. It would be possible to add, for example, an analysis of the periods of the day when casual customers most use the bike-sharing service. This information can help specify their usage and therefore provide more interesting insights to the marketing team. Another important thing is the difference between rides for everyday tasks from rides with leisure or physical activity purposes. I established arbitrarily rides below 30 minutes duration as the former and above 30 minutes as the latter. I suppose though the company has a better reasoned way to establish that difference. I think it would very productive to redo the analysis based on this kind of information.
+
+Finally, I didn’t analyze the data related to latitudes and longitudes of the places where rides started and ended. If there were additional data on places with high traffic of people in Chicago like universities, schools, stadiums, etc, it would be possible to cross this information with the current data set. The results could be used to address the marketing campaign to more specific groups of casual customers like undergraduate students.
+
+<div align="center">**--- End of report ---**</div>
