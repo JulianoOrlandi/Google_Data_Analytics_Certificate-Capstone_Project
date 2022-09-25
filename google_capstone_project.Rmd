@@ -407,7 +407,7 @@ showtext_auto()
 ```
 
 The first plot shows the percentage of rides for each type of customers. Here is the plot:
-<div align="center">![](images/plot1.png)</div>
+<div align="center">![](/plot1.png)</div>
 
 The second plot shows the number of rides by month during the analyzed period. The lines represent the number of rides by type of customer.It is interesting to notice that August is the only month in which casual customers' rides are greater than members' rides. It is summer and school break.
 
